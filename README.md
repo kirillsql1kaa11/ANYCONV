@@ -3,7 +3,7 @@ GUI + CLI конвертер файлов (Windows 10/11).
 
 ## 📦 Скачать
 
-➡ **[Скачать AnyConv для Windows](https://github.com/USERNAME/anyconv/releases/latest)**
+➡ **[Скачать AnyConv для Windows](https://github.com/kirillsql1kaa11/anyconv/releases/latest)**
 
 > Просто распакуйте архив и запустите `AnyConv.exe`
 
