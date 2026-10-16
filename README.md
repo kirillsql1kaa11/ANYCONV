@@ -20,6 +20,18 @@ pip install pywin32
 python -m anyconv.gui
 ```
 
+## Сборка exe
+
+```powershell
+.\.venv\Scripts\pyinstaller.exe --noconfirm --clean --onefile --windowed --noupx ^
+  --name AnyConv --collect-submodules anyconv --collect-all playwright ^
+  --hidden-import win32com.client run_gui.py
+```
+
+Готовый файл появится в `dist\AnyConv.exe`.
+
+> Для конвертации HTML → PDF на целевой машине нужен Chromium: `python -m playwright install chromium`.
+
 ## CLI
 ```powershell
 python -m anyconv.cli list
