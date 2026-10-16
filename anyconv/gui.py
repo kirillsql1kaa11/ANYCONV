@@ -13,13 +13,13 @@ from .core import ConvertJob, Registry
 from .registry import build_registry
 
 
-APP_TITLE = "AnyConv — Converter"
+APP_TITLE = "AnyConv — конвертер файлов"
 ACCENT = "#A78BFA"
 BG = "#0B0620"
 PANEL = "#130B2E"
 TEXT = "#EDE9FE"
-MUTED = "#B8A8FF"
-BORDER = "rgba(167,139,250,0.25)"
+MUTED = "#8E7FD4"
+BORDER = "rgba(167,139,250,0.22)"
 
 def qss() -> str:
     return f"""
@@ -30,57 +30,94 @@ def qss() -> str:
         font-size: 12px;
     }}
     QLabel#title {{
-        font-size: 18px;
+        font-size: 20px;
         font-weight: 600;
     }}
     QLabel#subtitle {{
         color: {MUTED};
     }}
+    QLabel#caption {{
+        color: {MUTED};
+        font-size: 11px;
+    }}
     QListWidget, QPlainTextEdit {{
         background: {PANEL};
         border: 1px solid {BORDER};
-        border-radius: 14px;
-        padding: 10px;
+        border-radius: 12px;
+        padding: 8px;
+    }}
+    QPlainTextEdit {{
+        font-family: Consolas;
+        font-size: 11px;
+        color: {MUTED};
     }}
     QComboBox {{
         background: {PANEL};
         border: 1px solid {BORDER};
-        border-radius: 12px;
-        padding: 8px 10px;
-        min-width: 160px;
+        border-radius: 10px;
+        padding: 7px 10px;
+        min-width: 130px;
     }}
     QComboBox QAbstractItemView {{
         background: {PANEL};
         border: 1px solid {BORDER};
-        selection-background-color: rgba(167,139,250,0.25);
+        selection-background-color: rgba(167,139,250,0.22);
         padding: 6px;
     }}
     QPushButton {{
-        background: rgba(167,139,250,0.16);
+        background: transparent;
         border: 1px solid {BORDER};
-        border-radius: 12px;
-        padding: 10px 14px;
-        font-weight: 600;
+        border-radius: 10px;
+        padding: 8px 14px;
     }}
     QPushButton:hover {{
-        background: rgba(167,139,250,0.24);
+        background: rgba(167,139,250,0.14);
     }}
     QPushButton:pressed {{
-        background: rgba(167,139,250,0.30);
+        background: rgba(167,139,250,0.20);
+    }}
+    QPushButton#primary {{
+        background: {ACCENT};
+        border: none;
+        color: #14092E;
+        font-weight: 600;
+        padding: 11px 16px;
+    }}
+    QPushButton#primary:hover {{
+        background: #B9A2FF;
+    }}
+    QPushButton#primary:pressed {{
+        background: #9678E8;
+    }}
+    QPushButton#primary:disabled {{
+        background: rgba(167,139,250,0.25);
+        color: {MUTED};
     }}
     QCheckBox {{
         color: {TEXT};
         spacing: 8px;
     }}
     QCheckBox::indicator {{
-        width: 18px; height: 18px;
-        border-radius: 6px;
+        width: 16px; height: 16px;
+        border-radius: 5px;
         border: 1px solid {BORDER};
         background: {PANEL};
     }}
     QCheckBox::indicator:checked {{
         background: rgba(167,139,250,0.35);
         border: 1px solid rgba(167,139,250,0.55);
+    }}
+    QScrollBar:vertical {{
+        background: transparent;
+        width: 10px;
+    }}
+    QScrollBar::handle:vertical {{
+        background: rgba(167,139,250,0.25);
+        border-radius: 5px;
+        min-height: 24px;
+    }}
+    QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+        height: 0;
     }}
     """
 
@@ -120,28 +157,28 @@ class ConvertWorker(QThread):
             self.out_dir.mkdir(parents=True, exist_ok=True)
 
         total = len(files)
-        self.log.emit(f"Found files: {total}")
+        self.log.emit(f"Найдено файлов: {total}")
 
         for i, f in enumerate(files, start=1):
             frm = f.suffix.lower().lstrip(".")
             fn = self.registry.get(frm, self.to_ext)
             if not fn:
-                self.log.emit(f"[{i}/{total}] SKIP  {f}  (no converter {frm}->{self.to_ext})")
+                self.log.emit(f"[{i}/{total}] пропуск — {f.name}: нет конвертера {frm} → {self.to_ext}")
                 continue
 
             dst = build_dst(f, self.out_dir, self.to_ext)
             if dst.exists() and not self.overwrite:
-                self.log.emit(f"[{i}/{total}] SKIP  {f}  (exists)")
+                self.log.emit(f"[{i}/{total}] пропуск — {f.name}: файл уже существует")
                 continue
 
             try:
                 job = ConvertJob(src=f, dst=dst, fmt_from=frm, fmt_to=self.to_ext)
                 fn(job)
                 ok += 1
-                self.log.emit(f"[{i}/{total}] OK    {f.name}  →  {dst.name}")
+                self.log.emit(f"[{i}/{total}] готово  — {f.name} → {dst.name}")
             except Exception as e:
                 fail += 1
-                self.log.emit(f"[{i}/{total}] FAIL  {f.name}  ({e!r})")
+                self.log.emit(f"[{i}/{total}] ошибка  — {f.name}: {e}")
 
         self.finished_ok.emit(ok, fail)
 
@@ -173,7 +210,7 @@ class MainWindow(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle(APP_TITLE)
-        self.setMinimumSize(860, 560)
+        self.setMinimumSize(820, 540)
         self.setStyleSheet(qss())
 
         self.registry: Registry = build_registry()
@@ -182,40 +219,44 @@ class MainWindow(QWidget):
         self.worker: ConvertWorker | None = None
 
         root = QVBoxLayout(self)
-        root.setContentsMargins(18, 18, 18, 18)
+        root.setContentsMargins(20, 20, 20, 20)
         root.setSpacing(12)
 
         header = QVBoxLayout()
+        header.setSpacing(2)
         title = QLabel("AnyConv")
         title.setObjectName("title")
-        subtitle = QLabel("Drag & drop файлы/папки → выбери формат → Convert")
+        subtitle = QLabel("Перетащите файлы или папки, выберите формат — и готово.")
         subtitle.setObjectName("subtitle")
         header.addWidget(title)
         header.addWidget(subtitle)
         root.addLayout(header)
 
         controls = QHBoxLayout()
+        controls.setSpacing(8)
         self.combo = QComboBox()
         self.combo.addItems(sorted({to for _, to in self.registry.supported()}))
-        controls.addWidget(QLabel("Convert to:"))
+        controls.addWidget(QLabel("В формат:"))
         controls.addWidget(self.combo)
 
-        self.btn_out = QPushButton("Output folder…")
+        self.btn_out = QPushButton("Папка вывода…")
         self.btn_out.clicked.connect(self.pick_out)
         controls.addWidget(self.btn_out)
 
-        self.chk_recursive = QCheckBox("Recursive")
+        self.chk_recursive = QCheckBox("Рекурсивно")
         self.chk_recursive.setChecked(True)
-        self.chk_overwrite = QCheckBox("Overwrite")
+        self.chk_recursive.setToolTip("Обрабатывать файлы во вложенных папках")
+        self.chk_overwrite = QCheckBox("Перезаписывать")
+        self.chk_overwrite.setToolTip("Заменять уже существующие выходные файлы")
         controls.addWidget(self.chk_recursive)
         controls.addWidget(self.chk_overwrite)
         controls.addStretch(1)
 
-        self.btn_add = QPushButton("Add files…")
+        self.btn_add = QPushButton("Добавить файлы…")
         self.btn_add.clicked.connect(self.add_files)
-        self.btn_add_dir = QPushButton("Add folder…")
+        self.btn_add_dir = QPushButton("Добавить папку…")
         self.btn_add_dir.clicked.connect(self.add_folder)
-        self.btn_clear = QPushButton("Clear")
+        self.btn_clear = QPushButton("Очистить")
         self.btn_clear.clicked.connect(self.clear_list)
 
         controls.addWidget(self.btn_add)
@@ -228,17 +269,24 @@ class MainWindow(QWidget):
         body.setSpacing(12)
 
         left = QVBoxLayout()
+        left.setSpacing(8)
+        lst_caption = QLabel("Файлы и папки")
+        lst_caption.setObjectName("caption")
         self.listw = DropList()
         self.listw.dropped.connect(self.on_dropped)
-        left.addWidget(QLabel("Files / folders (drop here):"))
+        left.addWidget(lst_caption)
         left.addWidget(self.listw)
 
-        self.btn_convert = QPushButton("Convert")
+        self.btn_convert = QPushButton("Конвертировать")
+        self.btn_convert.setObjectName("primary")
         self.btn_convert.clicked.connect(self.convert)
         left.addWidget(self.btn_convert)
 
         right = QVBoxLayout()
-        right.addWidget(QLabel("Log:"))
+        right.setSpacing(8)
+        log_caption = QLabel("Журнал")
+        log_caption.setObjectName("caption")
+        right.addWidget(log_caption)
         self.log = QPlainTextEdit()
         self.log.setReadOnly(True)
         right.addWidget(self.log)
@@ -247,7 +295,7 @@ class MainWindow(QWidget):
         body.addLayout(right, 1)
         root.addLayout(body)
 
-        self.append_log("Ready. Drop files/folders or use Add buttons.")
+        self.append_log("Готово. Добавьте файлы или перетащите их в список.")
 
     def append_log(self, s: str) -> None:
         self.log.appendPlainText(s)
@@ -261,38 +309,38 @@ class MainWindow(QWidget):
                 continue
             self.items.append(p)
             self.listw.addItem(QListWidgetItem(str(p)))
-        self.append_log(f"Added: {len(paths)} item(s). Total: {len(self.items)}")
+        self.append_log(f"Добавлено: {len(paths)} (всего {len(self.items)})")
 
     def add_files(self):
-        files, _ = QFileDialog.getOpenFileNames(self, "Select files")
+        files, _ = QFileDialog.getOpenFileNames(self, "Выберите файлы")
         if files:
             self.add_items([Path(f) for f in files])
 
     def add_folder(self):
-        d = QFileDialog.getExistingDirectory(self, "Select folder")
+        d = QFileDialog.getExistingDirectory(self, "Выберите папку")
         if d:
             self.add_items([Path(d)])
 
     def clear_list(self):
         self.items.clear()
         self.listw.clear()
-        self.append_log("Cleared list.")
+        self.append_log("Список очищен.")
 
     def pick_out(self):
-        d = QFileDialog.getExistingDirectory(self, "Select output folder")
+        d = QFileDialog.getExistingDirectory(self, "Папка вывода")
         if d:
             self.out_dir = Path(d)
-            self.append_log(f"Output folder: {self.out_dir}")
+            self.append_log(f"Папка вывода: {self.out_dir}")
 
     def set_busy(self, busy: bool):
         for w in (self.btn_convert, self.btn_add, self.btn_add_dir, self.btn_clear, self.btn_out, self.combo,
                   self.chk_recursive, self.chk_overwrite):
             w.setEnabled(not busy)
-        self.btn_convert.setText("Converting…" if busy else "Convert")
+        self.btn_convert.setText("Конвертация…" if busy else "Конвертировать")
 
     def convert(self):
         if not self.items:
-            QMessageBox.warning(self, "AnyConv", "Добавь хотя бы один файл или папку.")
+            QMessageBox.warning(self, "AnyConv", "Добавьте хотя бы один файл или папку.")
             return
 
         to_ext = self.combo.currentText()
@@ -300,8 +348,11 @@ class MainWindow(QWidget):
         overwrite = self.chk_overwrite.isChecked()
 
         self.append_log("—" * 40)
-        self.append_log(f"Convert to: {to_ext} | recursive={recursive} | overwrite={overwrite}")
-        self.append_log(f"Output: {self.out_dir if self.out_dir else 'рядом с исходником'}")
+        self.append_log(
+            f"В формат: {to_ext} · рекурсивно: {'да' if recursive else 'нет'} · "
+            f"перезапись: {'да' if overwrite else 'нет'}"
+        )
+        self.append_log(f"Вывод: {self.out_dir if self.out_dir else 'рядом с исходными файлами'}")
 
         self.set_busy(True)
         self.worker = ConvertWorker(
@@ -317,7 +368,7 @@ class MainWindow(QWidget):
         self.worker.start()
 
     def on_done(self, ok: int, fail: int):
-        self.append_log(f"Done. OK={ok} FAIL={fail}")
+        self.append_log(f"Готово: успешно {ok}, с ошибками {fail}")
         self.set_busy(False)
 
 def main():
