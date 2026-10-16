@@ -1,93 +1,99 @@
 from __future__ import annotations
+
 from pathlib import Path
+
 import typer
 from rich.console import Console
 from rich.table import Table
 
-from .core import ConvertJob
+from . import __version__, engine, update
 from .registry import build_registry
 
-app = typer.Typer(add_completion=False)
+app = typer.Typer(add_completion=False, no_args_is_help=True)
 console = Console()
 reg = build_registry()
 
-def iter_files(src: Path, recursive: bool) -> list[Path]:
-    if src.is_file():
-        return [src]
-    pat = "**/*" if recursive else "*"
-    return [p for p in src.glob(pat) if p.is_file()]
+STATUS_STYLE = {"ok": "green", "skip": "yellow", "error": "red"}
+STATUS_LABEL = {"ok": "ok", "skip": "skip", "error": "fail"}
 
-def build_dst(src_file: Path, out_dir: Path | None, to_ext: str) -> Path:
-    if out_dir:
-        return out_dir / (src_file.stem + "." + to_ext)
-    return src_file.with_suffix("." + to_ext)
 
 @app.command()
-def list():
+def list() -> None:
     """Показать поддерживаемые конвертации."""
-    t = Table(title="Supported conversions")
-    t.add_column("from")
-    t.add_column("to")
+    t = Table(title="Поддерживаемые конвертации")
+    t.add_column("из")
+    t.add_column("в")
     for frm, to in reg.supported():
         t.add_row(frm, to)
+    t.add_row("папка или файл", "zip (упаковать)")
+    t.add_row("zip", "unpack (распаковать)")
     console.print(t)
+
 
 @app.command()
 def convert(
     src: Path = typer.Argument(..., help="Файл или папка"),
-    to: str = typer.Argument(..., help="Целевое расширение (например: pdf, html, xlsx)"),
+    to: str = typer.Argument(..., help="Целевой формат: pdf, html, xlsx, docx, png, zip, unpack…"),
     out: Path | None = typer.Option(None, "--out", "-o", help="Папка вывода (по умолчанию рядом с файлом)"),
     recursive: bool = typer.Option(True, "--recursive/--no-recursive", help="Рекурсивно для папок"),
     overwrite: bool = typer.Option(False, "--overwrite", help="Перезаписывать выходные файлы"),
-):
+    quality: int = typer.Option(85, "--quality", "-q", min=10, max=100, help="Качество JPEG/WebP"),
+) -> None:
     """Конвертация файлов в заданный формат."""
     src = src.expanduser()
-    files = iter_files(src, recursive=recursive)
-    if not files:
-        raise typer.BadParameter("Нет файлов для конвертации.")
+    if not src.exists():
+        raise typer.BadParameter(f"Не найдено: {src}")
+    out_dir = out.expanduser() if out else None
 
-    if out:
-        out = out.expanduser()
-        out.mkdir(parents=True, exist_ok=True)
-
-    ok, fail = 0, 0
     rows: list[tuple[str, str, str]] = []
 
-    to_ext = to.lower().lstrip(".")
+    def on_result(f: Path, owner: Path, status: str, message: str, index: int) -> None:
+        rows.append((f.name, status, message))
 
-    for f in files:
-        frm = f.suffix.lower().lstrip(".")
-        fn = reg.get(frm, to_ext)
-        if not fn:
-            rows.append((str(f), "skip", f"no converter {frm}->{to_ext}"))
-            continue
+    try:
+        res = engine.run_batch(
+            [src],
+            to,
+            out_dir,
+            recursive=recursive,
+            overwrite=overwrite,
+            options={"quality": quality},
+            registry=reg,
+            on_result=on_result,
+        )
+    except KeyboardInterrupt:
+        console.print("[yellow]Прервано пользователем[/]")
+        raise typer.Exit(1)
 
-        dst = build_dst(f, out, to_ext)
-        if dst.exists() and not overwrite:
-            rows.append((str(f), "skip", "exists (use --overwrite)"))
-            continue
-
-        try:
-            job = ConvertJob(src=f, dst=dst, fmt_from=frm, fmt_to=to_ext)
-            fn(job)
-            ok += 1
-            rows.append((str(f), "ok", str(dst)))
-        except Exception as e:
-            fail += 1
-            rows.append((str(f), "fail", repr(e)))
-
-    t = Table(title=f"Done: ok={ok}, fail={fail}")
-    t.add_column("src", overflow="fold")
-    t.add_column("status")
-    t.add_column("info", overflow="fold")
-    for r in rows[:200]:
-        t.add_row(*r)
+    title = f"Готово: успешно {res.ok}, пропущено {res.skip}, ошибок {res.fail}"
+    if res.cancelled:
+        title = "Прервано · " + title
+    t = Table(title=title)
+    t.add_column("файл", overflow="fold")
+    t.add_column("статус")
+    t.add_column("результат", overflow="fold")
+    for name, status, message in rows[:200]:
+        style = STATUS_STYLE.get(status, "white")
+        t.add_row(name, f"[{style}]{STATUS_LABEL.get(status, status)}[/]", message)
     if len(rows) > 200:
-        t.add_row("...", "...", f"+{len(rows)-200} more")
+        t.add_row("...", "...", f"+{len(rows) - 200} ещё")
     console.print(t)
 
-def main():
+
+@app.command(name="check-update")
+def check_update() -> None:
+    """Проверить свежий релиз на GitHub."""
+    result = update.check_for_update(__version__)
+    if result is None:
+        console.print(f"Обновлений нет. Текущая версия: {__version__}")
+        return
+    tag, url = result
+    console.print(f"Доступна версия [bold green]{tag}[/]: {url}")
+
+
+def main() -> None:
     app()
+
 
 if __name__ == "__main__":
     main()
