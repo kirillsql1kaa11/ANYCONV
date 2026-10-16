@@ -1,6 +1,36 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "anyconv"
-version = "0.2.0"
+version = "0.3.0"
 description = "AnyConv — simple GUI/CLI converter"
 requires-python = ">=3.10"
-.gitignore
+dependencies = [
+    "typer>=0.12",
+    "rich>=13",
+    "pillow>=10",
+    "markdown>=3.5",
+    "pandas>=2",
+    "openpyxl>=3.1",
+    "reportlab>=4",
+    "playwright>=1.40",
+    "pyside6>=6.6",
+    "pypdfium2>=4.30",
+    "pypdf>=4",
+    "python-docx>=1.1",
+]
+
+[project.optional-dependencies]
+word = ["pywin32>=306"]
+
+[project.scripts]
+anyconv = "anyconv.cli:main"
+anyconv-gui = "anyconv.gui:main"
+
+[tool.setuptools]
+packages = ["anyconv", "anyconv.converters"]
+
+[tool.setuptools.package-data]
+anyconv = ["assets/*.ico"]
